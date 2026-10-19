@@ -1,0 +1,11 @@
+# Compiled binaries and object files
+*.exe
+*.o
+*.out
+
+# Temporary runtime data
+*.dat
+
+# VS Code system workspace settings
+.vscode/
+
