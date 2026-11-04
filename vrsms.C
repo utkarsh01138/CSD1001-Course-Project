@@ -211,6 +211,176 @@ void displayMembers(const StoreState *store)
                m -> outstandingDues);
     }
     printf("========================================================================================\n");
+}
 
+/* ========================================
+   4. INVENTORY MANAGEMENT FUNCTIONS
+   ======================================== */
 
+// Helper to convert MediaCategory enum to string for display
+static const char* getCategoryName(MediaCategory category)
+{
+    switch (category)
+    {
+        case MEDIA_VIDEO:    return "Video";
+        case MEDIA_MUSIC_CD: return "Music CD";
+        default:             return "Unknown";
+    }
+}
+
+// Helper to convert MediaFormat enum to string for display
+static const char* getFormatName(MediaFormat format)
+{
+    switch (format)
+    {
+        case FORMAT_VHS:      return "VHS";
+        case FORMAT_MP4:      return "MP4";
+        case FORMAT_AUDIO_CD: return "Audio CD";
+        default:              return "Unknown";
+    }
+}
+
+// Helper to convert ItemStatus enum to string for display
+static const char* getStatusName(ItemStatus status)
+{
+    switch (status)
+    {
+        case ITEM_AVAILABLE:               return "Available";
+        case ITEM_LOANED:                  return "Loaned";
+        case ITEM_REMOVED_LOST_DAMAGED:    return "Lost/Damaged";
+        case ITEM_REMOVED_SOLD_LIQUIDATED: return "Sold (10%)";
+        default:                           return "Unknown";
+    }
+}
+
+// Procures a new item, sets purchase cost & daily rent, and logs procurement expense
+void procureNewItem(StoreState *store, Date today)
+{
+    if (store -> inventoryCount >= MAX_INVENTORY)
+    {
+        printf("\n[ERROR] Inventory is full (%d items). Cannot procure more. \n", MAX_INVENTORY);
+        return;
+    }
+
+    MediaItem *item = &store -> inventory[store -> inventoryCount];
+    item -> itemID = store -> inventoryCount++; // Auto-increment ID
+
+    printf("\n--- Procure New media Item (ID: %d) ---\n", item -> itemID);
+
+    printf("Enter Title: ");
+    fgets(item -> title, sizeof(item -> title), stdin);
+    stripNewline(item -> title);
+
+    // 1. Select Category
+    int categoryChoice = 0;
+    while (categoryChoice != 1 && categoryChoice != 2)
+    {
+        printf("Select Category (1. Video CD/DVD, 2. Music CD): ");
+        if (scanf("%d", &categoryChoice) != 1 || (categoryChoice != 1 && categoryChoice != 2))
+        {
+            printf("[ERROR] Invalid input. Please enter 1 or 2.\n");
+            clearInputBuffer();
+            categoryChoice = 0; // Reset to loop again
+            continue;
+        }
+        clearInputBuffer();
+    }
+    item -> category = (MediaCategory)categoryChoice;
+
+    // 2. Select Format
+    if (item -> category == MEDIA_VIDEO)
+    {
+        int formatChoice = 0;
+        while (formatChoice != 1 && formatChoice != 2)
+        {
+            printf("Select Video Format (1=VHS, 2 = MP4): ");
+            if (scanf("%d", &formatChoice) != 1 || (formatChoice != 1 && formatChoice != 2))
+            {
+                printf("Invalid selection. Please enter 1 or 2. \n");
+                clearInputBuffer();
+                formatChoice = 0; // Reset to loop again
+                continue;
+            }
+            clearInputBuffer();
+        }
+        item -> format = (MediaFormat)formatChoice;
+    } 
+    else
+    {
+        // Music CDS are always standard Audio CD format
+        item -> format = FORMAT_AUDIO_CD;
+        printf("Format automatically set to Audio CD.\n");
+    }
+
+    // 3. Purchase Price
+    printf("Enter purchase price paid by store (Rs.):");
+    while (scanf("%lf", &item -> purchasePrice) != 1 || item -> purchasePrice <= 0.0)
+    {
+        printf("Invalid price. Please enter a positive amount: ");
+        clearInputBuffer();
+    }
+    clearInputBuffer();
+
+    // 4. Daily Rental Charge
+    printf("Enter Daily Rental Charge (Rs.): ");
+    while (scanf("%lf", &item -> baseDailyRate) != 1 || item -> baseDailyRate <= 0.0)
+    {
+        printf("Invalid rental rate. Enter a positive amount: ");
+        clearInputBuffer();
+    }
+    clearInputBuffer();
+
+    // 5. Initialise lifecycle & loan tracking
+    item -> procurementDate = today;
+    item -> status = ITEM_AVAILABLE;
+    item -> everIssued = 0;
+    item -> lastActivityDate = today;
+    item -> loanedToMemberID = 0;
+    item -> lockedDailyRent = 0.0;
+
+    // Outflow: Update store's procurement expense ledger
+    store -> totalProcurementCost += item -> purchasePrice;
+    store -> inventoryCount++;
+
+    printf("\n>>> Item procured sucessfully. \n");
+    printf(">>> ID: %d | Title: '%s' | Category: %s | Format: %s\n", 
+           item -> itemID, 
+           item -> title, 
+           getCategoryName(item -> category), 
+           getFormatName(item -> format));
+    printf(">> Procured On: %02d/%02d/%04d | Purchase Cost: Rs. %.2f | Daily Rent: Rs. %.2f\n",
+           today.day, today.month, today.year, item -> purchasePrice, item -> baseDailyRate);
+}
+
+// Displays inventory including both original and effective (current) rate
+void displayInventory(const StoreState *store, Date today)
+{
+    printf("\n========================================================================================================================\n");
+    printf("                                                     STORE INVENTORY                                                    \n");
+    printf("========================================================================================================================\n");
+
+    printf("%-5s | %-24s | %-9s | %-8s | %-10s | %-9s | %-9s | %-10s | %-13s\n",
+           "ID", "Title", "Category", "Format", "Purchased", "Cost(Rs)", "Base Rent", "Current Rent", "Status");
+    printf("------------------------------------------------------------------------------------------------------------------------\n");
+    
+    if (store -> inventoryCount == 0)
+        printf("                                          No items in inventory yet.                                                    \n");
+
+    for (int i = 0; i < store -> inventoryCount; i++)
+    {
+        const MediaItem *item = &store -> inventory[i];
+        double currentRate = getEffectiveDailyRate(item, today);
+
+        printf("%-5d | %-24.24s | %-9s | %-8s | %02d/%02d/%04d | %-9.2f | %-9.2f | %-10.2f | %-13s\n",
+               item->itemID,
+               item->title,
+               getCategoryName(item->category),
+               getFormatName(item->format),
+               item->procurementDate.day, item->procurementDate.month, item->procurementDate.year,
+               item->purchasePrice,
+               item->baseDailyRate,
+               currentRate,
+               getStatusName(item->status));
+    }
+    printf("========================================================================================================================\n");
 }
