@@ -132,3 +132,85 @@ void registerMember(StoreState *store)
     printf(">>> Member ID: %d | Name: %s\n", m->memberID, m->name);
     printf(">>> Deposit of Rs. %.2f collected and recorded.\n", m->depositAmount);
 }
+
+// Cancels membership & refunds deposit iff dues == 0 and no loans active
+void cancelMembership(StoreState *store)
+{
+    int ID;
+    printf("\n-- Cancel Membership ---\n");
+    printf("Enter Member ID to cancel: ");
+    if (scanf("%d", &ID) != 1)
+    {
+        printf("Invalid input. \n");
+        clearInputBuffer();
+        return;
+    }
+    clearInputBuffer();
+
+    if (ID < 1 || ID > store -> memberCount)
+    {
+        printf("[ERROR] Member ID %d not found. \n", ID);
+        return;
+    }
+
+    Member *m = &store -> members[ID - 1];
+
+    if (!m -> isActive)
+    {
+        printf("[INFO] Member ID %d is already cancelled/inactive. \n", ID);
+        return;
+    }
+
+    // Edge Case 1: Unreturned Items
+    if (m -> borrowedVideoID != 0 || m -> borrowedMusicID != 0)
+    {
+        printf("[ERROR] Cannot cancel membership. Member ID %d has unreturned items.\n", ID);
+        if (m -> borrowedVideoID != 0)
+            printf(" - Must return Video Item ID %d\n", m -> borrowedVideoID);
+        if (m -> borrowedMusicID != 0)
+            printf(" - Must return Music Item ID %d\n", m -> borrowedMusicID);
+        return;
+    }
+
+    // Edge Case 2: Outstanding Financial Dues
+    if (m -> outstandingDues > 0.0)
+    {
+        printf("[ERROR] Cannot cancel membership. Member ID %d has outstanding dues of Rs. %.2f\n", ID, m -> outstandingDues);
+        return;
+    }
+
+    // Both checks passed: Process the cancellation and refund the deposit
+    m -> isActive = 0; // Mark as inactive
+    printf("\n>>> Membership cancelled for %s (ID: %d). \n", m -> name, m -> memberID);
+    printf(">>> Deposit refund of Rs. %.2f handed over to customer. \n", m -> depositAmount);
+}
+
+// Displays a formatted table of all registered members
+void displayMembers(const StoreState *store)
+{
+    printf("\n========================================================================================\n");
+    printf("                                  REGISTERED MEMBERS                                   \n");
+    printf("========================================================================================\n");
+    printf("%-5s | %-20s | %-12s | %-8s | %-7s | %-7s | %-10s\n",
+           "ID", "Name", "Phone", "Status", "Video", "Music", "Dues (Rs)");
+    printf("----------------------------------------------------------------------------------------\n");
+
+    if (store->memberCount == 0) 
+        printf("                       No members registered yet.                                      \n");
+    
+    for (int i = 0; i < store -> memberCount; i++)
+    {
+        const Member *m = &store -> members[i];
+        printf("%-5d | %-20s | %-12s | %-8s | %-7d | %-7d | %-10.2f\n",
+               m -> memberID,
+               m -> name,
+               m -> phone,
+               m -> isActive ? "Active" : "Inactive",
+               m -> borrowedVideoID,
+               m -> borrowedMusicID,
+               m -> outstandingDues);
+    }
+    printf("========================================================================================\n");
+
+
+}
