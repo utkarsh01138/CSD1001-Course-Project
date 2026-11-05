@@ -48,6 +48,8 @@ double getEffectiveDailyRate(const MediaItem *item, Date today)
         return item->baseDailyRate;
     }
 }
+
+
 /* ========================================
     2. Binary File Persistence Functions (Save & Load)
 ======================================== */
@@ -383,4 +385,197 @@ void displayInventory(const StoreState *store, Date today)
                getStatusName(item->status));
     }
     printf("========================================================================================================================\n");
+}
+
+/* ========================================
+   5. RENTAL & RETURN OPERATIONS
+   ======================================== */
+
+// Issues a media item to a member, enforcing the 1-item-per-category rule 
+void issueItem(StoreState *store, Date today)
+{
+    int memberID, itemID;
+
+    printf("\n--- Issue media Item (Borrow) ---\n");
+
+    // 1. Identify & Validate the Member
+    printf("Enter member ID: ");
+    if (scanf("%d", &memberID) != 1)
+    {
+        printf("Invalid input. \n");
+        clearInputBuffer();
+        return;
+    }
+    clearInputBuffer();
+
+    if (memberID < 1 || memberID > store -> memberCount)
+    {
+        printf("[ERROR] Member ID %d not found. \n", memberID);
+        return;
+    }
+
+    Member *m = &store -> members[memberID - 1];
+    if (!m -> isActive)
+    {
+        printf("[ERROR] Member %s (ID %d) is inactive/cancelled. Cannot borrow. \n", m -> name, m ->memberID);
+        return;
+    }
+
+    // 2. Identify & Validate the Item
+    printf("Enter Media Item ID to borrow: ");
+    if (scanf("%d", &itemID) != 1)
+    {
+        printf("Invalid input. \n");
+        clearInputBuffer();
+        return;
+    }
+    clearInputBuffer();
+
+    if (itemID < 1 || itemID > store -> inventoryCount)
+    {
+        printf("[ERROR] Media Item ID %d does not exist. \n", itemID);
+        return;
+    }
+    
+    MediaItem *item = &store -> inventory[itemID - 1];
+    if (item -> status != ITEM_AVAILABLE)
+    {
+        printf("[ERROR] Item '%s' (ID %d) is not available for borrowing. Current Status: %s\n", 
+               item -> title, item -> itemID, getStatusName(item -> status));
+        return;
+    }
+
+    // 3. Enforce the strict 1-item-per-category rule
+    if (item -> category == MEDIA_VIDEO)
+    {
+        if (m -> borrowedVideoID != 0)
+        {
+            printf("\n[BORROW LIMIT REACHED] Member %s (ID %d) already has a borrowed Video Item (ID: %d). \n", 
+                   m -> name, m -> memberID, m -> borrowedVideoID);
+            printf("Members can hold at most 1 Video at a time. Please return it first.\n");
+            return;
+        }
+    }
+    else if (item -> category == MEDIA_MUSIC_CD)
+    {
+        if (m -> borrowedMusicID != 0)
+        {
+            printf("\n[BORROW LIMIT REACHED] Member %s (ID %d) already has a borrowed Music CD (ID: %d). \n", 
+                   m -> name, m -> memberID, m -> borrowedMusicID);
+            printf("Members can hold at most 1 Music CD at a time. Please return it first.\n");
+            return;
+        }
+    }
+
+    // 4. Lock in current effective daily rent (halved if > 1 year old)
+    item -> lockedDailyRent = getEffectiveDailyRate(item, today);
+    item -> status = ITEM_LOANED;
+    item -> loanedToMemberID = m -> memberID;
+    item -> loanIssueDate = today;
+    item -> everIssued = 1;
+    item -> lastActivityDate = today;
+
+    // Link item to member
+    if (item -> category == MEDIA_VIDEO)
+        m -> borrowedVideoID = item -> itemID;
+    else
+        m -> borrowedMusicID = item -> itemID;
+
+    // 5. Print Rental Receipt to console
+    printf("\n==================================================\n");
+    printf("                 RENTAL RECEIPT                   \n");
+    printf("==================================================\n");
+    printf("Receipt Date    : %02d/%02d/%04d\n", today.day, today.month, today.year);
+    printf("Member ID       : %d\n", m->memberID);
+    printf("Member Name     : %s\n", m->name);
+    printf("Item ID         : %d\n", item->itemID);
+    printf("Title           : %s\n", item->title);
+    printf("Category        : %s (%s)\n", getCategoryName(item->category), getFormatName(item->format));
+    printf("Daily Rental    : Rs. %.2f / day\n", item->lockedDailyRent);
+    printf("Deposit Held    : Rs. %.2f\n", m->depositAmount);
+    printf("==================================================\n");
+
+    // Also saving receipt to a text file
+    char receiptFileName[64];
+    sprintf(receiptFileName, "receipt_item%d_member%d.txt", item -> itemID, m -> memberID);
+    FILE *rfp = fopen(receiptFileName, "w");
+    if (rfp != NULL)
+    {
+        fprintf(rfp, "==================================================\n");
+        fprintf(rfp, "                 RENTAL RECEIPT                   \n");
+        fprintf(rfp, "==================================================\n");
+        fprintf(rfp, "Receipt Date    : %02d/%02d/%04d\n", today.day, today.month, today.year);
+        fprintf(rfp, "Member ID       : %d\n", m->memberID);
+        fprintf(rfp, "Member Name     : %s\n", m->name);
+        fprintf(rfp, "Item ID         : %d\n", item->itemID);
+        fprintf(rfp, "Title           : %s\n", item->title);
+        fprintf(rfp, "Category        : %s (%s)\n", getCategoryName(item->category), getFormatName(item->format));
+        fprintf(rfp, "Daily Rental    : Rs. %.2f / day\n", item->lockedDailyRent);
+        fprintf(rfp, "Deposit Held    : Rs. %.2f\n", m->depositAmount);
+        fprintf(rfp, "==================================================\n");
+        fclose(rfp);
+        printf(">>> Receipt saved to file '%s'.\n", receiptFileName);
+    }
+}
+
+// Handles returning an item or reporting it lost/damaged
+void returnOrReportItem(StoreState *store, Date today)
+{
+    int itemID;
+
+    printf("\n--- Return / Report Lost or Damaged Itme ---\n");
+    printf("Enter Media Item ID: ");
+    if (scanf("%d", &itemID) != 1)
+    {
+        printf("Invalid input. \n");
+        clearInputBuffer();
+        return;
+    }
+    clearInputBuffer();
+
+    if (itemID < 1 | itemID > store -> inventoryCount)
+    {
+        printf("[ERROR] Media Item ID %d does not exist. \n", itemID);
+        return;
+    }
+
+    MediaItem *item = &store -> inventory[itemID - 1];
+    if (item -> status != ITEM_LOANED)
+    {
+        printf("[ERROR] Item '%s' (ID %d) is not currently on loan. Current Status: %s\n", 
+               item -> title, item -> itemID, getStatusName(item -> status));
+               return;
+    }
+
+    Member *m = &store -> members[item -> loanedToMemberID - 1];
+
+    // 1. Calculate rental duration in days 
+    int days = ddaysBetweenDates(item -> loanIssueDate, today);
+    if (days < 1)
+        days = 1; // Minimum 1 day charge
+    
+    double rentalDue = days * item -> lockedDailyRent;
+
+    printf("\n>>> Loan Record Found: \n");
+    printf(" - Borrower    : %s (Member ID: %d)\n", m->name, m->memberID);
+    printf(" - Item        : '%s' (Item ID: %d)\n", item->title, item->itemID);
+    printf(" - Issue Date  : %02d/%02d/%04d\n", item->loanIssueDate.day, item->loanIssueDate.month, item->loanIssueDate.year);
+    printf(" - Return Date : %02d/%02d/%04d (%d day%s)\n", today.day, today.month, today.year, days, days == 1 ? "" : "s");
+    printf(" - Locked Rate : Rs. %.2f / day\n", item->lockedDailyRent);
+    printf(" - Rental Due  : Rs. %.2f\n", rentalDue);
+
+    // 2. Determine condition of the item
+    int conditionChoice = 0;
+    while (conditionChoice != 1 && conditionChoice != 2)
+    {
+        printf("\nSelect Return Condition: \n");
+        printf("1. Item returned in good condition\n");
+        printf("2. Item was LOST or DAMAGED\n");
+        printf("Choice (1 or 2): ");
+        if (scanf("%d", &conditionChoice) != 1 || (conditionChoice != 1 && conditionChoice != 2))
+        {
+            printf("Invalid selection. Please enter 1 or 2. \n");
+            clearInputBuffer();
+        }
+    }
 }
