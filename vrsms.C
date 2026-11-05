@@ -533,7 +533,7 @@ void returnOrReportItem(StoreState *store, Date today)
     }
     clearInputBuffer();
 
-    if (itemID < 1 | itemID > store -> inventoryCount)
+    if (itemID < 1 || itemID > store -> inventoryCount)
     {
         printf("[ERROR] Media Item ID %d does not exist. \n", itemID);
         return;
@@ -550,7 +550,7 @@ void returnOrReportItem(StoreState *store, Date today)
     Member *m = &store -> members[item -> loanedToMemberID - 1];
 
     // 1. Calculate rental duration in days 
-    int days = ddaysBetweenDates(item -> loanIssueDate, today);
+    int days = daysBetweenDates(item -> loanIssueDate, today);
     if (days < 1)
         days = 1; // Minimum 1 day charge
     
@@ -608,7 +608,9 @@ void returnOrReportItem(StoreState *store, Date today)
         printf("Amount Paid     : Rs. %.2f\n", rentalDue);
         printf("Status          : Item returned to shelf.\n");
         printf("==================================================\n");
-    } else {
+    } 
+    else 
+    {
         // --- LOST OR DAMAGED ---
         // Rule: Full price of the item is charged to them, and item is removed
         double replacementCost = item->purchasePrice;
@@ -637,4 +639,171 @@ void returnOrReportItem(StoreState *store, Date today)
         printf("Status          : Item REMOVED from inventory.\n");
         printf("==================================================\n");
     }
+}
+
+/* ========================================
+   6. CLEARANCE & PROFIT/LOSS ACCOUNTING
+   ======================================== */
+
+// Scans for items unissued for >365 days and sells them to active members at 10% of cost
+void runUnissuedClearance(StoreState *store, Date today)
+{
+    printf("\n========================================================================================\n");
+    printf("                       1-YEAR UNISSUED CLEARANCE SCAN (> 365 DAYS)                     \n");
+    printf("========================================================================================\n");
+
+    int eligibleCount = 0;
+    int eligibleIDs[MAX_INVENTORY];
+
+    // Find all items that have sat unissued for  > 365 days
+    for (int i = 0; i < store -> inventoryCount; i++)
+    {
+        MediaItem *item = &store -> inventory[i];
+        if (item -> status == ITEM_AVAILABLE)
+        {
+            int daysIdle = daysBetweenDates(item -> lastActivityDate, today);
+            if (daysIdle > 365)
+            {
+                eligibleIDs[eligibleCount++] = item -> itemID;
+                printf("[%d] ID %-4d | '%-22.22s' | Cost: Rs.%-7.2f | Idle: %d days | Clearance Price (10%%): Rs.%.2f\n",
+                       eligibleCount,
+                       item->itemID,
+                       item->title,
+                       item->purchasePrice,
+                       daysIdle,
+                       item->purchasePrice * 0.10);
+            }
+        }
+    }
+
+    if (eligibleCount == 0)
+    {
+        printf(">>> No items in inventory have been unissued for more than a year. \n");
+        return;
+    }
+
+    printf("----------------------------------------------------------------------------------------\n");
+    printf("Found %d eligible item(s) for clearance sale.\n", eligibleCount);
+
+    int targetItemID;
+    printf("Enter Media Item ID to sell at 10%% (or 0  to cancel): ");
+    if (scanf("%d", &targetItemID) != 1)
+    {
+        clearInputBuffer();
+        printf("Clearance operation cancelled. \n");
+        return;
+    }
+    clearInputBuffer();
+
+    // Verify selection is indeed eligible
+    int isEligible = 0;
+    for (int i = 0; i < eligibleCount; i++)
+    {
+        if (eligibleIDs[i] == targetItemID)
+        {
+            isEligible = 1;
+            break;
+        }
+    }
+    if (!isEligible)
+    {
+        printf("[ERROR] Item ID %d is not eligible for 10%% clearance sale. \n", targetItemID);
+        return;
+    }
+
+    // Buyer must be an active registered member
+    int buyerMemberID;
+    printf("Enter purchasing Member ID: ");
+    if (scanf("%d", &buyerMemberID) != 1)
+    {
+        printf("Invalid input. \n");
+        clearInputBuffer();
+        return;
+    }
+    clearInputBuffer();
+
+    if (buyerMemberID < 1 || buyerMemberID > store -> memberCount)
+    {
+        printf("[ERROR] Member ID %d does not exist. \n", buyerMemberID);
+        return;
+    }
+
+    Member *buyer = &store -> members[buyerMemberID - 1];
+    if (!buyer -> isActive)
+    {
+        printf("[ERROR] Member %s (ID %d) is inactive. Only active members can buy clearance stock. \n", buyer -> name, buyer -> memberID);
+        return;
+    }
+
+    MediaItem *targetItem = &store -> inventory[targetItemID - 1];
+    double salePrice = targetItem -> purchasePrice * 0.10;
+
+    // Record liquidation revenue and remove item from inventory
+    store -> totalLiquidationSales += salePrice;
+    targetItem -> status = ITEM_REMOVED_SOLD_LIQUIDATED;
+    targetItem -> lastActivityDate = today;
+
+    printf("\n==================================================\n");
+    printf("             CLEARANCE SALE RECEIPT               \n");
+    printf("==================================================\n");
+    printf("Sale Date       : %02d/%02d/%04d\n", today.day, today.month, today.year);
+    printf("Buyer Name      : %s (Member ID: %d)\n", buyer->name, buyer->memberID);
+    printf("Item Sold       : '%s' (Item ID: %d)\n", targetItem->title, targetItem->itemID);
+    printf("Original Cost   : Rs. %.2f\n", targetItem->purchasePrice);
+    printf("Discount        : 90%% OFF\n");
+    printf("Final Price Paid: Rs. %.2f (10%% of purchase price)\n", salePrice);
+    printf("Status          : Item SOLD and REMOVED from inventory.\n");
+    printf("==================================================\n");
+}
+
+// Computes and prints the full Profit & Loss Account of the store
+void displayProfitLoss(const StoreState *store) {
+    printf("\n========================================================\n");
+    printf("           VIDEO RENTAL STORE - PROFIT & LOSS           \n");
+    printf("========================================================\n");
+    
+    // 1. Inflows (Revenue)
+    printf(" REVENUE / CASH INFLOWS:\n");
+    printf("  + Rental Income Collected          : Rs. %10.2f\n", store->totalRentalIncome);
+    printf("  + Lost / Damaged Recoveries (100%%) : Rs. %10.2f\n", store->totalPenaltyIncome);
+    printf("  + Liquidation Clearance Sales (10%%): Rs. %10.2f\n", store->totalLiquidationSales);
+    printf(" -------------------------------------------------------\n");
+    double totalInflow = store->totalRentalIncome +
+                         store->totalPenaltyIncome +
+                         store->totalLiquidationSales;
+    printf("  TOTAL REVENUE EARNED               : Rs. %10.2f\n\n", totalInflow);
+    
+    // 2. Outflows (Expenses)
+    printf(" EXPENSES / CASH OUTFLOWS:\n");
+    printf("  - Total Media Procurement Cost     : Rs. %10.2f\n", store->totalProcurementCost);
+    printf(" -------------------------------------------------------\n");
+    double totalOutflow = store->totalProcurementCost;
+    printf("  TOTAL CAPITAL EXPENDITURE          : Rs. %10.2f\n\n", totalOutflow);
+    
+    // 3. Net Financial Position
+    printf("========================================================\n");
+    double netBalance = totalInflow - totalOutflow;
+    if (netBalance >= 0.0) 
+    {
+        printf("  NET POSITION : NET PROFIT of Rs. %.2f\n", netBalance);
+    } 
+    else 
+    {
+        printf("  NET POSITION : NET LOSS of Rs. %.2f\n", -netBalance);
+    }
+    printf("========================================================\n");
+    // 4. Balance Sheet Transparency Note: Customer Deposits
+    int activeMembers = 0;
+    for (int i = 0; i < store->memberCount; i++) {
+        if (store->members[i].isActive) {
+            activeMembers++;
+        }
+    }
+    double totalDepositsHeld = activeMembers * MEMBERSHIP_DEPOSIT;
+    printf("\n [LIABILITY NOTE]\n");
+    printf("  Active Customer Deposits Held      : Rs. %.2f (%d active members)\n",
+           totalDepositsHeld, activeMembers);
+    printf("  (Refundable deposits are held as liabilities and\n");
+    printf("   are strictly excluded from store profit/loss calculations).\n");
+    printf("========================================================\n");
 }
