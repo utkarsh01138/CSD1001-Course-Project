@@ -576,6 +576,65 @@ void returnOrReportItem(StoreState *store, Date today)
         {
             printf("Invalid selection. Please enter 1 or 2. \n");
             clearInputBuffer();
+            conditionChoice = 0;
+            continue; 
         }
+        clearInputBuffer();
+    }
+
+    if (conditionChoice == 1)
+    {
+        // --- SAFE RETURN ---
+        store -> totalRentalIncome += rentalDue;
+
+        // Reset item to available
+        item -> status = ITEM_AVAILABLE;
+        item -> loanedToMemberID = 0;
+        item -> lastActivityDate = today;
+        item -> lockedDailyRent = 0.0;
+
+        // Unlink item from member's active borrow slot. 
+        if (item->category == MEDIA_VIDEO) {
+            m->borrowedVideoID = 0;
+        } else {
+            m->borrowedMusicID = 0;
+        }
+        printf("\n==================================================\n");
+        printf("               RETURN SETTLEMENT                  \n");
+        printf("==================================================\n");
+        printf("Member Name     : %s\n", m->name);
+        printf("Item Title      : %s\n", item->title);
+        printf("Days Borrowed   : %d\n", days);
+        printf("Amount Paid     : Rs. %.2f\n", rentalDue);
+        printf("Status          : Item returned to shelf.\n");
+        printf("==================================================\n");
+    } else {
+        // --- LOST OR DAMAGED ---
+        // Rule: Full price of the item is charged to them, and item is removed
+        double replacementCost = item->purchasePrice;
+        double totalDue = rentalDue + replacementCost;
+        store->totalRentalIncome += rentalDue;
+        store->totalPenaltyIncome += replacementCost;
+        // Mark item as removed from inventory
+        item->status = ITEM_REMOVED_LOST_DAMAGED;
+        item->loanedToMemberID = 0;
+        item->lastActivityDate = today;
+        // Unlink item from member
+        if (item->category == MEDIA_VIDEO) {
+            m->borrowedVideoID = 0;
+        } else {
+            m->borrowedMusicID = 0;
+        }
+        printf("\n==================================================\n");
+        printf("           LOSS / DAMAGE PENALTY INVOICE          \n");
+        printf("==================================================\n");
+        printf("Member Name     : %s\n", m->name);
+        printf("Item Title      : %s (Item ID: %d)\n", item->title, item->itemID);
+        printf("Rental Charge   : Rs. %.2f (%d day%s)\n", rentalDue, days, days == 1 ? "" : "s");
+        printf("Replacement Fee : Rs. %.2f (100%% of purchase price)\n", replacementCost);
+        printf("--------------------------------------------------\n");
+        printf("TOTAL COLLECTED : Rs. %.2f\n", totalDue);
+        printf("Status          : Item REMOVED from inventory.\n");
+        printf("==================================================\n");
     }
 }
