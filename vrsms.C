@@ -806,4 +806,4 @@ void displayProfitLoss(const StoreState *store) {
     printf("  (Refundable deposits are held as liabilities and\n");
     printf("   are strictly excluded from store profit/loss calculations).\n");
     printf("========================================================\n");
-}
+} 
