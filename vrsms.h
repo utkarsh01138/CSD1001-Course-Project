@@ -3,7 +3,7 @@
 
 #define MAX_MEMBERS 200
 #define MAX_INVENTORY 500
-#define MEMBERSHIP_DEPOSIT 1000
+#define MEMBERSHIP_DEPOSIT 1000.0
 
 typedef struct {
     int day;
@@ -19,7 +19,9 @@ typedef enum {
 typedef enum {
     FORMAT_VHS = 1,
     FORMAT_MP4 = 2,
-    FORMAT_AUDIO_CD = 3
+    FORMAT_DVD = 3,
+    FORMAT_VCD = 4,
+    FORMAT_AUDIO_CD = 5
 } MediaFormat;
 
 typedef enum {
@@ -30,7 +32,7 @@ typedef enum {
 } ItemStatus;
 
 typedef struct {
-    int itemID;
+    int itemId;
     char title[100];
     MediaCategory category;
     MediaFormat format;
@@ -42,13 +44,13 @@ typedef struct {
     int everIssued;
     Date lastActivityDate;
 
-    int loanedToMemberID;
+    int loanedToMemberId;
     Date loanIssueDate;
     double lockedDailyRent;
 } MediaItem;
 
 typedef struct {
-    int memberID;
+    int memberId;
     char name[60];
     char address[120];
     char phone[20];
@@ -56,8 +58,8 @@ typedef struct {
     double depositAmount;
     double outstandingDues;
 
-    int borrowedVideoID;
-    int borrowedMusicID;
+    int borrowedVideoId;
+    int borrowedMusicId;
 } Member;
 
 typedef struct {
@@ -73,34 +75,33 @@ typedef struct {
     double totalLiquidationSales;
 } StoreState;
 
-/* =================== 
-Function Prototypes
-=================== */
-
-// 1. Utility & Helper Functions
+// --- Helper Functions ---
 void clearInputBuffer();
+void readString(char *buffer, int maxLen);
+int isValidDate(Date d);
 int daysBetweenDates(Date d1, Date d2);
-double getEffectiveDailyRate(const MediaItem *item, Date today);
+double getEffectiveDailyRate(const MediaItem *item, Date todayDate);
 
-// 2. Binary File persistence (Save & Load)
+// --- File Persistence ---
 int saveStoreState(const StoreState *store, const char *fileName);
 int loadStoreState(StoreState *store, const char *fileName);
 
-// 3. Member Functions
+// --- Member Operations ---
 void registerMember(StoreState *store);
 void cancelMembership(StoreState *store);
+void payMemberDues(StoreState *store);
 void displayMembers(const StoreState *store);
 
-// 4. Inventory Operations
-void procureNewItem(StoreState *store, Date today);
-void displayInventory(const StoreState *store, Date today);
+// --- Inventory Operations ---
+void procureNewItem(StoreState *store, Date todayDate);
+void displayInventory(const StoreState *store, Date todayDate);
 
-// 5. Rental & Return Operations
-void issueItem(StoreState *store, Date today);
-void returnOrReportItem(StoreState *store, Date today);
+// --- Rental & Return Operations ---
+void issueItem(StoreState *store, Date todayDate);
+void returnOrReportItem(StoreState *store, Date todayDate);
 
-// 6. Liquidation & Accounting
-void runUnissuedClearance(StoreState *store, Date today);
+// --- Clearance & Accounts ---
+void runUnissuedClearance(StoreState *store, Date todayDate);
 void displayProfitLoss(const StoreState *store);
 
 #endif /* VRSMS_H */
